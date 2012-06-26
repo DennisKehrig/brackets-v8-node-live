@@ -1,12 +1,12 @@
 # Node.js/V8 Live Development with the Brackets editor
 
 When active, this extension maintains a connection to a Node.js/V8 debugger running on localhost:5858.
-If you then edit a script that is running that VM, all your changes are updated live.
+Changes to scripts running in that VM are updated live.
 
 ## Requirements
 
-To talk to the debugger from within Brackets, a separate node-based socket bridge needs to be started first.
-It maintains a regular socket-based connection to the debugger, and can be accessed by Brackets via a WebSocket.
+To let Brackets talk with the debugger, a separate node-based socket bridge needs to be started first.
+It maintains a regular socket-based connection to the debugger and can be accessed by Brackets via a WebSocket.
 
 ## Install
 
@@ -16,7 +16,7 @@ Clone the extension into the disabled extensions folder of Brackets:
 
 Create a link to enable the extension:
 
-    ln -s brackets/src/extensions/disabled/v8-node-live brackets/src/extensions/user/v8-node-live
+    ln -s ../disabled/v8-node-live brackets/src/extensions/user/v8-node-live
 
 Install [Node.js](http://nodejs.org/) and npm, then install the necessary node modules:
 
@@ -28,7 +28,7 @@ Install [Node.js](http://nodejs.org/) and npm, then install the necessary node m
 First launch the [Node.js](http://nodejs.org/) based socket bridge:
 
     cd brackets/src/extensions/disabled/ExtensionManager
-    node server
+    node socket-bridge
 
 Now start Brackets. The extension adds a V8 toolbar button with the following states:
 
@@ -39,7 +39,7 @@ Now start Brackets. The extension adds a V8 toolbar button with the following st
 
 ## Todo
 
-- Allow to limit updates to save commands only
+- Allow updating only on save
 - Add Coffee-Script compatibility
 
 ## License
