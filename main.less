@@ -1,0 +1,22 @@
+#toolbar-go-live-v8 {
+    padding-right: 8px;
+    
+    text-shadow: 0 0 2px #333, 0 0 2px #333;
+    font-weight: bold;
+    color: #fff;
+    &.connected {
+        color: #e00;
+        &.bridged {
+            color: #fc0;
+            &.live {
+                color: #0c0;
+            }
+        }
+    }
+    -webkit-transition: text-shadow 0.1s, color 0.3s;
+}
+#toolbar-go-live-v8:hover {
+    text-shadow: 0 0 2px #000, 0 0 2px #000;
+    text-decoration: none;
+}
+
