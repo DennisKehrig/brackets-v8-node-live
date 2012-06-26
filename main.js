@@ -260,7 +260,7 @@ define(function main(require, exports, module) {
     /** Find a script by name from a list of scripts */
     function _findScript(scripts, name) {
         for (var i in scripts) {
-            if (scripts[i].name.search(name) >= 0) return scripts[i];
+            if (scripts[i].name && scripts[i].name.search(name) >= 0) return scripts[i];
         }
         return null;
     }
