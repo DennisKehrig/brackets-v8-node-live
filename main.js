@@ -83,11 +83,11 @@ define(function main(require, exports, module) {
     
     /** Setup the V8 toolbar button, called by init */
     function _setupGoLiveButton() {
-        _loadLessFile("main.less", _extensionDirForBrowser());
-
-        _$btnGoLive = $("<a>").attr({ href: "#", id: "toolbar-go-live-v8" }).text("V8");
-        _$btnGoLive.insertBefore('#main-toolbar .buttons #toolbar-go-live');
-        _$btnGoLive.click(_handleGoLiveCommand);
+        _loadLessFile("main.less", _extensionDirForBrowser()).done(function () {
+            _$btnGoLive = $("<a>").attr({ href: "#", id: "toolbar-go-live-v8" }).text("V8");
+            _$btnGoLive.click(_handleGoLiveCommand);
+            _$btnGoLive.insertBefore('#main-toolbar .buttons #toolbar-go-live');
+        });
     }
 
     /** Handles clicks of the V8 toolbar button */
@@ -299,6 +299,8 @@ define(function main(require, exports, module) {
 
     /** Loads a less file as CSS into the document */
     function _loadLessFile(file, dir) {
+        var result = $.Deferred();
+        
         // Load the Less code
         $.get(dir + file, function (code) {
             // Parse it
@@ -307,8 +309,11 @@ define(function main(require, exports, module) {
                 console.assert(!err, err);
                 // Convert it to CSS and append that to the document head
                 $("<style>").text(tree.toCSS()).appendTo(window.document.head);
+                result.resolve();
             });
         });
+        
+        return result.promise();
     }
 
     /** Initialize V8 LiveDevelopment */
