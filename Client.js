@@ -22,63 +22,35 @@
  *
  */
 
-#denniskehrig-v8live-button {
-	position: relative;
-	display: inline-block;
+/*jslint vars: true, plusplus: true, devel: true, nomen: true, indent: 4, forin: true, maxerr: 50, regexp: true */
 
-	margin-right: 8px;
-	font-weight: bold;
+(function () {
+	'use strict';
 
-	-webkit-transition: text-shadow 0.1s, color 0.2s;
+	var Client = require("node-inspector/lib/client");
+	module.exports = Client;
 
-	color: #fff;
-	&.connected { color: #e00; }
-	&.bridged   { color: #fc0; }
-	&.live      { color: #0c0; }
-
-	text-shadow: 0 0 2px #333, 0 0 2px #333;
-	&:hover {
-		text-shadow: 0 0 2px #000, 0 0 2px #000;
-		text-decoration: none;
-		&:before {
-			content: attr(data-description);
-			display: block;
-			position: absolute;
-
-			text-shadow: none;
-			font-weight: normal;
-			font-size: 80%;
-			
-			right: -50%;
-			top: 100%;
-			margin-top: 10px;
-			white-space: nowrap;
-			
-			color: #fff;
-			border-radius: 5px;
-			padding: 2px 5px;
-			box-shadow: 1px 2px 4px #ccc;
-			
-			background-color: rgba(0, 0, 0, 0.8);
-		}
-		&:after {
-			content: "";
-			display: block;
-			position: absolute;
-
-			right: 50%;
-			top: 100%;
-			margin-right: -6px;
-			margin-top: 4px;
-
-			width:    0;
-			height:   0;
-			
-			border-right:  6px solid transparent;
-			border-left:   6px solid transparent;
-			border-bottom: 6px solid rgba(0, 0, 0, 0.8);
-		}
+	// Copied from node-inspector/lib/client
+	function respond(cb) {
+		return function (res) {
+			cb(res.message, res.body);
+		};
 	}
-}
 
+	// Enhance getScripts to allow arguments to be set
+	var getScripts = Client.prototype.getScripts;
+	Client.prototype.getScripts = function getScripts(args, callback) {
+		if (typeof callback === 'undefined') {
+			callback = args;
+			args = undefined;
+		}
 
+		var request = { command: 'scripts' };
+		if (args) {
+			request["arguments"] = args;
+		}
+		
+		this.request(request, respond(callback));
+	};
+
+}());

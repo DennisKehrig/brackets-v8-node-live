@@ -1,4 +1,5 @@
 /*
+ * The MIT License (MIT)
  * Copyright (c) 2012 Dennis Kehrig. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -34,7 +35,7 @@
 	var net				= require('net');
 
 	var io				= require('node-inspector/node_modules/socket.io'),
-		Client			= require('node-inspector/lib/client');
+		Client			= require('./Client');
 
 	// Function to summarize function parameters
 	var summarize		= require('./summarize');
@@ -59,6 +60,7 @@
 	function init() {
 		_startBridge(_bridgePort);
 	}
+
 
 
 	// Start a socket.io server
@@ -191,21 +193,21 @@
 		_reconnecting = false;
 		if (_editor) {
 			console.log("Telling editor we're connected to the debugger");
-			_editor.emit('bridgeConnected');
+			_editor.emit('debuggerConnect');
 		}
 	}
 
 	function _onDebuggerError(error) {
 		if (_editor) {
 			console.log("Telling editor about the error");
-			_editor.emit("error", error);
+			_editor.emit("debuggerError", error);
 		}
 	}
 
 	function _onDebuggerDisconnect() {
 		if (_editor && ! _reconnecting) {
 			console.log("Telling editor we're no longer connected to the debugger");
-			_editor.emit('bridgeDisconnected');
+			_editor.emit('debuggerDisconnect');
 			_reconnectDebugger();
 		}
 	}

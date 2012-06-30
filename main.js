@@ -1,4 +1,5 @@
 /*
+ * The MIT License (MIT)
  * Copyright (c) 2012 Dennis Kehrig. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -21,9 +22,9 @@
  *
  */
 
-
 /*jslint vars: true, plusplus: true, devel: true, nomen: true, indent: 4, forin: true, maxerr: 50, regexp: true */
 /*global define, brackets, $, less, io */
+
 
 /**
  * main integrates V8 LiveDevelopment into Brackets
@@ -39,292 +40,429 @@
  * @require DocumentManager
  */
 define(function main(require, exports, module) {
-    'use strict';
+	'use strict';
 
-    // Document Manager
-    var DocumentManager     = brackets.getModule("document/DocumentManager");
-    // Debugger class, implements an API by communicating with the socket bridge
-    var Debugger            = require("./Debugger");
 
-    // This directory
-    var _moduleDirectory    = require.toUrl("./").replace(/\.\/$/, '');
-    // Path to socket.io.js
-    var _pathSocketIoJs     = _moduleDirectory + "/node_modules/socket.io-client/dist/socket.io.js";
-    // URL to the socket bridge
-    var _socketBridgeUrl    = 'http://localhost:3858';
-    // socket.io options
-    var _connectionOptions = {
-        // Make a second io.connect() call actually do something (default: false)
-        'force new connection': true,
-        // If the server drops the connection, do not reconnect automatically (default: true)
-        'reconnect': false
-    };
-    
-    // The toolbar button
-    var _$btnGoLive;
-    // WebSocket to the socket bridge, only set when connected
-    var _socketBridge;
-    // Debugger API, only set when bridged
-    var _debugger;
-    // Current Brackets document, only set when a document is open
-    var _document;
-    // Script objects as defined by the V8 debugger, only set when the document is a script running in V8
-    var _script;
+	// --- Required modules ---
 
-    /** Load socket.io client library unless io is already defined, called by init */
-    function _loadSocketIO() {
-        if (typeof io === 'undefined') {
-            console.log("[V8] Loading socket.io client");
-            $("<script>").attr("src", _pathSocketIoJs).appendTo(window.document.head);
-        } else {
-            console.log("[V8] Socket.io client already loaded");
-        }
-    }
-    
-    /** Setup the V8 toolbar button, called by init */
-    function _setupGoLiveButton() {
-        _loadLessFile("main.less", _extensionDirForBrowser()).done(function () {
-            _$btnGoLive = $("<a>").attr({ href: "#", id: "toolbar-go-live-v8" }).text("V8");
-            _$btnGoLive.click(_handleGoLiveCommand);
-            _$btnGoLive.insertBefore('#main-toolbar .buttons #toolbar-go-live');
-        });
-    }
+	// Document Manager
+	var DocumentManager     = brackets.getModule("document/DocumentManager");
+	// Debugger class, implements an API by communicating with the socket bridge
+	var Debugger            = require("./Debugger");
 
-    /** Handles clicks of the V8 toolbar button */
-    function _handleGoLiveCommand() {
-        console.log("[V8] Button clicked");
-        if (_socketBridge) {
-            _disconnect();
-        } else {
-            _connect();
-        }
-    }
+	
+	// --- Settings ---
+	
+	// This directory
+	var _moduleDirectory    = require.toUrl("./").replace(/\.\/$/, '');
+	// Path to socket.io.js
+	var _pathSocketIoJs     = _moduleDirectory + "/node_modules/socket.io-client/dist/socket.io.js";
+	// URL to the socket bridge
+	var _socketBridgeUrl    = 'http://localhost:3858';
+	// socket.io options
+	var _connectionOptions = {
+		// Make a second io.connect() call actually do something (default: false)
+		'force new connection': true,
+		// If the server drops the connection, do not reconnect automatically (default: true)
+		'reconnect': false
+	};
+	// What V8 wraps code in automatically
+	var _codePrefix = "(function (exports, require, module, __filename, __dirname) {\n";
+	var _codeSuffix = "\n});";
+	// Will be shown as tooltips
+	var _stateDescriptions = {
+		disconnected: 'Click to connect to the Socket Bridge',
+		connected:    'Node.js/V8 does not seem to be running',
+		bridged:      'The current file is not executed by Node.js/V8',
+		live:         'Live connection to Node.js/V8'
+	};
+	
+	
+	// --- State ---
 
-    /** Connects to the socket bridge */
-    function _connect() {
-        if (_socketBridge) {
-            console.log("[V8] Already connected to socket bridge");
-            return;
-        }
-        
-        console.log("[V8] Connecting to socket bridge");
-        
-        _socketBridge = io.connect(_socketBridgeUrl, _connectionOptions);
-        _setupSocketBridge();
-    }
+	// <style> tag containing CSS code compiled from LESS
+	var _$styleTag;
+	// The toolbar button
+	var _$button;
+	// WebSocket to the socket bridge, only set when connected
+	var _socketBridge;
+	// Debugger API, only set when bridged
+	var _debugger;
+	// Script objects as defined by the V8 debugger, only set when the document is a script running in V8
+	var _script;
+	// Current Brackets document, only set when the current document is a running script
+	var _doc;
+	
+	
+	// --- Event Handlers ---
 
-    /** Sets up socket event handlers */
-    function _setupSocketBridge() {
-        // Set a flag to decide in the error handler below whether we ever connected
-        var didConnect = false;
-        _socketBridge.on('connect', function () {
-            console.log("[V8] Connected to socket bridge");
-            didConnect = true;
-            
-            _onConnect();
-        });
-        
-        // Make sure _socketBridge is null when disconnected
-        _socketBridge.on('disconnect', function () {
-            console.log("[V8] Disconnected from socket bridge");
-            _socketBridge = null;
-            
-            _onDisconnect();
-        });
+	/** Handles clicks of the V8 toolbar button */
+	function _onButtonClicked() {
+		console.log("[V8] Button clicked");
+		if (_socketBridge) {
+			_disconnect();
+		} else {
+			_connect();
+		}
+	}
+	
+	/** Called after we connected from the socket bridge */
+	function _onConnect()
+	{
+		console.log("[V8] Connected to socket bridge");
+		_updateState();
+	}
 
-        // Report connection errors, call _onError for later errors
-        _socketBridge.on('error', function (error) {
-            if (! didConnect) {
-                alert("Failed to connect to " + _socketBridgeUrl + "\n\nIs the socket bridge running?\nRun npm start in the " + _moduleDirectory + " folder.");
-                _disconnect();
-            } else {
-                _onError(error);
-            }
-        });
+	/** Called after we disconnected from the socket bridge */
+	function _onDisconnect()
+	{
+		_onBridgeDisconnect();
+		
+		console.log("[V8] Disconnected from socket bridge");
+		_socketBridge = null;
+		_updateState();
+	}
 
-        // Callbacks to determine the bridged state
-        _socketBridge.on('bridgeConnected', _onBridgeConnected);
-        _socketBridge.on('bridgeDisconnected', _onBridgeDisconnected);
+	/** Called for errors from/with the socket bridge */
+	function _onError(error) {
+		console.log(error);
+		alert("Failed to connect to " + _socketBridgeUrl + "\n\nIs the socket bridge running?\nRun npm start in the " + _moduleDirectory + " folder.");
+		_disconnect();
+	}
 
-        // Calls to callbacks we provided the debugger with
-        _socketBridge.on('callback', _onCallback);
-    }
+	/** Called after the socket bridge connected to the debugger */
+	function _onBridgeConnect() {
+		console.log("[V8] Socket bridge is connected to the debugger");
+		_debugger = new Debugger(_socketBridge);
+		_updateState();
 
-    /** Disconnect from the socket bridge */
-    function _disconnect() {
-        if (! _socketBridge) {
-            return;
-        }
+		var currentDocument = DocumentManager.getCurrentDocument();
+		$.each(DocumentManager.getAllOpenDocuments(), function (index, doc) {
+			_searchForRunningScript(doc).done(function (script) {
+				_updateDocument(doc, script, true);
+				if (currentDocument.url === doc.url) {
+					_onScriptFound(doc);
+				}
+			});
+		});
+	}
 
-        console.log("[V8] Disconnecting from socket bridge");
-        _socketBridge.disconnect();
-        // Delete the socket no matter what (in case the disconnect event is never triggered)
-        _socketBridge = null;
-    }
+	/** Called after the socket bridge disconnected from the debugger */
+	function _onBridgeDisconnect() {
+		_script = null;
+		_onScriptLost();
+		
+		console.log("[V8] Socket bridge has disconnected from the debugger");
+		_debugger = null;
+		_updateState();
+	}
 
-    /** Called after we disconnected from the socket bridge */
-    function _onDisconnect()
-    {
-        _onBridgeDisconnected();
-        _$btnGoLive.removeClass('connected').removeClass('live');
-    }
+	function _onScriptFound(script) {
+		console.log("[V8] Found a running script matching the current document");
+		
+		_script = script;
+		_updateState();
 
-    /** Called after we connected from the socket bridge */
-    function _onConnect()
-    {
-        _$btnGoLive.addClass('connected');
-    }
+		_startObservingDocument();
+	}
 
-    /** Called after the socket bridge connected to the debugger */
-    function _onBridgeConnected() {
-        console.log("[V8] Socket bridge is connected to the debugger");
-        _$btnGoLive.addClass('bridged');
-        _debugger = new Debugger(_socketBridge);
-        _updateLiveStatus();
-    }
+	function _onScriptLost() {
+		console.log("[V8] There's no running script matching the current document");
 
-    /** Called after the socket bridge disconnected from the debugger */
-    function _onBridgeDisconnected() {
-        console.log("[V8] Socket bridge has disconnected from the debugger");
-        _$btnGoLive.removeClass('bridged');
-        _debugger = null;
-        _updateLiveStatus();
-    }
+		_script = null;
+		_updateState();
 
-    /** Called when the V8 debugger calls a callback we set */
-    function _onCallback() {
-        if (_debugger) {
-            _debugger.onCallback.apply(_debugger, arguments);
-        }
-    }
+		_stopObservingDocument();
+	}
+	
+	/** Called when the socket bridge fowards us an error from/with the debugger */
+	function _onBridgeError(error) {
+		error = typeof error === "string" ? error : JSON.stringify(error);
+		alert("[V8] Debugger error: " + error);
+	}
 
-    /** Called when the socket bridge fowards us an error */
-    function _onError(error) {
-        error = typeof error === "string" ? error : JSON.stringify(error);
-        alert("[V8] Error: " + error);
-    }
+	/** Called when the V8 debugger calls a callback we set */
+	function _onCallback() {
+		if (_debugger) {
+			_debugger.onCallback.apply(_debugger, arguments);
+		}
+	}
 
-    /** React to document events, called by init */
-    function _setupDocumentManager() {
-        $(DocumentManager).on("currentDocumentChange", _onCurrentDocumentChanged);
-        $(DocumentManager).on('documentSaved', _onDocumentSaved);
-    }
+	/** Called when the user switches to a different document */
+	function _onCurrentDocumentChanged() {
+		if (! _debugger) { return; }
+		
+		_onScriptLost();
+		var doc = DocumentManager.getCurrentDocument();
+		if (! doc) { return; }
+		
+		_searchForRunningScript(doc).done(_onScriptFound);
+	}
 
-    /** Called when the user switches to a different document */
-    function _onCurrentDocumentChanged() {
-        _updateLiveStatus();
+	/** Called when the user modifies the current document */
+	function _onDocumentChanged(event, doc) {
+		// false: Don't report errors
+		_updateDocument(doc, _script, false);
+	}
 
-        if (_document) {
-            $(_document).off('change', _onDocumentChanged);
-            _document = null;
-        }
-        
-        var document = DocumentManager.getCurrentDocument();
-        if (document) {
-            $(document).on('change', _onDocumentChanged);
-            _document = document;
-        }
-    }
+	/** Called when the user saves the current document */
+	function _onDocumentSaved(event, doc) {
+		// true: Report errors
+		_updateDocument(doc, _script, true);
+	}
 
-    /** Called when the user saves the current document */
-    function _onDocumentSaved(event, document) {
-        _updateDocument(document, true);
-    }
 
-    /** Called when the user modifies the current document */
-    function _onDocumentChanged(event, document, changes) {
-        _updateDocument(document, false);
-    }
+	// --- Functionality ---
 
-    /** Sets _script and manages the 'live' CSS class for the V8 button */
-    function _updateLiveStatus() {
-        console.log("[V8] Updating live status");
-        
-        var document = DocumentManager.getCurrentDocument();
-        if (document && _debugger) {
-            var path = document.file.fullPath;
-            _debugger.getScripts(function (err, scripts) {
-                if (err) {
-                    _script = null;
-                    throw err;
-                }
-                _script = _findScript(scripts, path);
-                _$btnGoLive.toggleClass('live', _script ? true : false);
-            });
-        } else {
-            _$btnGoLive.removeClass('live');
-            _script = null;
-        }
-    }
+	function _updateState() {
+		var state = 'disconnected';
+		if (_socketBridge) {
+			state = 'connected';
+			if (_debugger) {
+				state = 'bridged';
+				if (_script) {
+					state = 'live';
+				}
+			}
+		}
+		//console.log("[V8] State: " + state);
 
-    /** Find a script by name from a list of scripts */
-    function _findScript(scripts, name) {
-        for (var i in scripts) {
-            if (scripts[i].name && scripts[i].name.search(name) >= 0) return scripts[i];
-        }
-        return null;
-    }
+		// Remove/add appropriate CSS classes
+		$.each(_stateDescriptions, function (otherState) {
+			_$button.toggleClass(otherState, state === otherState);
+		});
+		
+		// title isn't working on the Mac, so we fake it via CSS
+		_$button.attr('data-description', _stateDescriptions[state]);
+	}
 
-    /** Tell the debugger to update the code for this script */
-    function _updateDocument(document, reportError) {
-        if (! _script || ! _debugger) {
-            return;
-        }
-        
-        console.log("[V8] Updating document");
-        var path = document.file.fullPath;
-        var code = document.getText();
-        
-        // V8 wrapper. Or something.
-        code = "(function (exports, require, module, __filename, __dirname) {\n" + code + "\n});";
+	/** Connects to the socket bridge */
+	function _connect() {
+		if (_socketBridge) {
+			console.log("[V8] Already connected to socket bridge");
+			return;
+		}
+		
+		console.log("[V8] Connecting to socket bridge");
+		_socketBridge = io.connect(_socketBridgeUrl, _connectionOptions);
+		
+		// Brackets <-> Bridge
+		_socketBridge.on('connect',    _onConnect);
+		_socketBridge.on('disconnect', _onDisconnect);
+		_socketBridge.on('error',      _onError);
 
-        _debugger.changeLive(_script.id, code, false, function (err) {
-            if (! err) {
-                console.log("[V8] Successfully updated script " + _script.name);
-            }
-            else if (reportError) {
-                alert(err);
-            }
-        });
-    }
+		// Bridge <-> Debugger
+		_socketBridge.on('debuggerConnect',    _onBridgeConnect);
+		_socketBridge.on('debuggerDisconnect', _onBridgeDisconnect);
+		_socketBridge.on('debuggerError',      _onBridgeError);
 
-    /** Find this extension's directory relative to the brackets root */
-    function _extensionDirForBrowser() {
-        var bracketsIndex = window.location.pathname;
-        var bracketsDir   = bracketsIndex.substr(0, bracketsIndex.lastIndexOf('/') + 1);
-        var extensionDir  = bracketsDir + require.toUrl('./');
+		// Calls to callbacks we provided the debugger with
+		_socketBridge.on('callback', _onCallback);
+	}
 
-        return extensionDir;
-    }
+	/** Disconnect from the socket bridge */
+	function _disconnect() {
+		if (! _socketBridge) {
+			console.log("[V8] Already disconnected from the socket bridge");
+			return;
+		}
 
-    /** Loads a less file as CSS into the document */
-    function _loadLessFile(file, dir) {
-        var result = $.Deferred();
-        
-        // Load the Less code
-        $.get(dir + file, function (code) {
-            // Parse it
-            var parser = new less.Parser({ filename: file, paths: [dir] });
-            parser.parse(code, function onParse(err, tree) {
-                console.assert(!err, err);
-                // Convert it to CSS and append that to the document head
-                $("<style>").text(tree.toCSS()).appendTo(window.document.head);
-                result.resolve();
-            });
-        });
-        
-        return result.promise();
-    }
+		console.log("[V8] Disconnecting from socket bridge");
+		_socketBridge.disconnect();
+		// Delete the socket no matter what (in case the disconnect event is never triggered)
+		_socketBridge = null;
+	}
 
-    /** Initialize V8 LiveDevelopment */
-    function init() {
-        console.log("[V8] init");
-        _loadSocketIO();
-        _setupGoLiveButton();
-        _setupDocumentManager();
-    }
-    window.setTimeout(init);
+	/** Sets _script */
+	function _searchForRunningScript(doc) {
+		var result = new $.Deferred();
 
-    // Export public functions
-    exports.init = init;
+		if (! doc) {
+			console.log("[V8] No document to check");
+			result.reject();
+		}
+		else if (! _debugger) {
+			console.log("[V8] No debugger to ask for running scripts");
+			result.reject();
+		}
+		else {
+			console.log("[V8] Checking whether " + doc.file.name + " is a running script");
+			
+			var path = doc.file.fullPath;
+			_debugger.getScripts({ filter: path }, function onGetScripts(err, scripts) {
+				if (err) {
+					result.reject(err);
+					throw err;
+				}
+				
+				if (scripts.length === 0) {
+					result.reject();
+				}
+				else {
+					if (scripts.length > 1) {
+						console.log("[V8] Warning: More than one script matches path " + path);
+					}
+					result.resolve(scripts[scripts.length - 1]);
+				}
+			});
+		}
+
+		return result.promise();
+	}
+	
+	function _startObservingDocument() {
+		if (_doc) {
+			console.log("[V8] Bug? Already observing a document");
+		}
+
+		_doc = DocumentManager.getCurrentDocument();
+		
+		if (! _doc) {
+			console.log("[V8] No document to observe");
+			return;
+		}
+		
+		console.log("[V8] Observing document " + _doc.file.name);
+		$(_doc).on('change', _onDocumentChanged);
+		$(DocumentManager).on('documentSaved', _onDocumentSaved);
+	}
+
+	function _stopObservingDocument() {
+		if (! _doc) {
+			console.log("[V8] No document to stop observing");
+			return;
+		}
+		
+		console.log("[V8] No longer observing document " + _doc.file.name);
+		$(DocumentManager).off('documentSaved', _onDocumentSaved);
+		$(_doc).off('change', _onDocumentChanged);
+		_doc = null;
+	}
+
+	/** Tell the debugger to update the code for this script */
+	function _updateDocument(doc, script, reportError) {
+		console.log("[V8] Updating document " + doc.file.name);
+		
+		if (! _debugger || ! script || !doc) {
+			console.log("[V8] No debugger, script and/or document to use for updating");
+			return;
+		}
+
+		// Wrap the code as V8 does automatically
+		var code = _codePrefix + doc.getText() + _codeSuffix;
+
+		_debugger.changeLive(script.id, code, false, function (err) {
+			if (! err) {
+				console.log("[V8] Successfully updated script " + script.name);
+			}
+			else if (reportError) {
+				alert("Error while updating " + script.name + "\n\n" + err);
+			}
+		});
+	}
+
+
+	// --- Helper Functions ---
+	
+	/** Load socket.io client library unless io is already defined, called by init */
+	function _loadSocketIO() {
+		if (typeof io === 'undefined') {
+			console.log("[V8] Loading socket.io client");
+			$("<script>").attr("src", _pathSocketIoJs).appendTo(window.document.head);
+		} else {
+			console.log("[V8] Socket.io client already loaded");
+		}
+	}
+	
+	/** Find this extension's directory relative to the brackets root */
+	function _extensionDirForBrowser() {
+		var bracketsIndex = window.location.pathname;
+		var bracketsDir   = bracketsIndex.substr(0, bracketsIndex.lastIndexOf('/') + 1);
+		var extensionDir  = bracketsDir + require.toUrl('./');
+
+		return extensionDir;
+	}
+
+	/** Loads a less file as CSS into the document */
+	function _loadLessFile(file, dir) {
+		var result = $.Deferred();
+		
+		// Load the Less code
+		$.get(dir + file, function (code) {
+			// Parse it
+			var parser = new less.Parser({ filename: file, paths: [dir] });
+			parser.parse(code, function onParse(err, tree) {
+				console.assert(!err, err);
+				// Convert it to CSS and append that to the document head
+				$("<style>").text(tree.toCSS()).appendTo(window.document.head);
+				result.resolve();
+			});
+		});
+		
+		return result.promise();
+	}
+	
+
+	// --- Loaders and Unloaders ---
+
+	function _loadStyle() {
+		return _loadLessFile("main.less", _extensionDirForBrowser()).done(function ($node) {
+			_$styleTag = $node;
+		});
+	}
+
+	function _unloadStyle() {
+		_$styleTag.remove();
+	}
+
+	/** Setup the V8 toolbar button, called by init */
+	function _loadButton() {
+		var result = new $.Deferred();
+		
+		_loadStyle().done(function () {
+			_$button = $("<a>").text("V8").attr({ href: "#", id: "denniskehrig-v8live-button" });
+			_$button.click(_onButtonClicked);
+			_$button.insertBefore('#main-toolbar .buttons #toolbar-go-live');
+			result.resolve();
+		}).fail(result.reject);
+		
+		return result.promise();
+	}
+
+	
+	function _loadDocumentManager() {
+		$(DocumentManager).on("currentDocumentChange", _onCurrentDocumentChanged);
+	}
+
+	function _unloadDocumentManager() {
+		$(DocumentManager).off("currentDocumentChange", _onCurrentDocumentChanged);
+	}
+
+
+	function load() {
+		console.log("[V8] init");
+		_loadSocketIO();
+		_loadStyle().done(function () {
+			_loadButton().done(function () {
+				_updateState();
+			});
+		});
+		_loadDocumentManager();
+	}
+
+	function unload() {
+		_disconnect();
+		_unloadDocumentManager();
+	}
+
+	
+	// --- Exports ---
+	
+	exports.load = load;
+	exports.unload = unload;
+
+	
+	// --- Initializiation ---
+	
+	load();
 });

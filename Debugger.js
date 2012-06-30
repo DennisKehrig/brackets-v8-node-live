@@ -1,4 +1,5 @@
 /*
+ * The MIT License (MIT)
  * Copyright (c) 2012 Dennis Kehrig. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -72,8 +73,10 @@ define(function main(require, exports, module) {
 
     /** Call the callback */
     Debugger.prototype.onCallback = function (callbackId, args) {
-        console.log("[V8] Callback " + callbackId + " called with args " + args.map(summarize).join(", "));
         var callback = this.callbacks[callbackId];
+        var name = (callback && callback.name) || "anonymous";
+        //console.log("[V8] Callback " + callbackId + " (" + name + ") called with args " + args.map(summarize).join(", "));
+        
         if (callback) {
             delete this.callbacks[callbackId];
             callback.apply(null, args);
@@ -93,7 +96,7 @@ define(function main(require, exports, module) {
     }
 
     // add the following methods
-    var methods = ['getScripts', 'getScriptSource', 'changeLive'];
+    var methods = ['getScripts', 'getScriptSource', 'changeLive', 'request'];
     for (var i = 0; i < methods.length; i++) {
         _addMethod(methods[i]);
     }
