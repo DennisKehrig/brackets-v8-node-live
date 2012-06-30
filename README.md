@@ -28,7 +28,7 @@ Install [Node.js](http://nodejs.org/) and npm, then install the necessary node m
 First launch the [Node.js](http://nodejs.org/) based socket bridge:
 
     cd brackets/src/extensions/disabled/ExtensionManager
-    node socket-bridge
+    node socket_bridge
 
 Now start Brackets. The extension adds a V8 toolbar button with the following states:
 
