@@ -3,14 +3,13 @@
 , "description": "V8 Live Development for Brackets"
 , "version": "0.0.2"
 , "scripts": {
-    "start": "nodemon socket_bridge.js"
+    "start": "nodemon v8bridge.js"
   }
 , "author": "Dennis Kehrig <dennis.kehrig@rwth-aachen.de>"
 , "engines": {
     "node": "*"
   }
 , "dependencies": {
-    "node-inspector": "~0.2.0"
-  , "socket.io-client": "~0.9.6"
+    "ws": "~0.4.20"
   }
 }

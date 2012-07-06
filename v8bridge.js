@@ -1,6 +1,78 @@
 var ws = require("ws");
 var net = require("net");
 
+var DEBUG = true;
+
+var RED = 1, GREEN = 2, YELLOW = 3, BLUE = 4, MAGENTA = 5, CYAN = 6;
+function debugLog(color) {
+	if (!DEBUG) return;
+	function col(code) {
+		return '\033[3' + (code ? code : 0) + 'm';
+	}
+	var args = Array.prototype.slice.call(arguments, 1);
+	args.unshift(col(color));
+	args.push(col());
+	console.log.apply(console, args);
+}
+
+// Server Session
+function ServerSession(socket) {
+	this.socket = socket;
+	this.socket.on("message", this.onMessage.bind(this));
+	this.socket.on("close", this.onClose.bind(this));
+}
+
+ServerSession.prototype = {
+	onMessage: function (message) {
+		function sendResponse(response) {
+			this.socket.send(response);
+		}
+		var response = this.handleMessage(message);
+		if (response !== undefined) {
+			if (response && typeof response.then === "function") {
+				response.then(sendResponse);
+			} else {
+				sendResponse(response);
+			}
+		}
+	},
+
+	onClose: function () {
+		this.client.close();
+	},
+
+	send: function (message) {
+		this.socket.send(message);
+	},
+
+	handleMessage: function (message) {}
+};
+
+// Server (WebSocket)
+function Server(options) {
+	this.wss = new ws.Server(options);
+	this.wss.on("connection", this.onConnect.bind(this));
+	this.sessions = [];
+}
+
+Server.prototype = {
+	onConnect: function (socket) {
+		var session = new ServerSession(socket);
+		this.configureSession(session);
+		socket.on("close", this.onClose.bind(this, session));
+		this.sessions.push(session);
+	},
+
+	onClose: function (session) {
+		for (var i in this.sessions) {
+			if (session === this.sessions[i]) {
+				delete this.sessions[i];
+			}
+		}
+	},
+
+	configureSession: function (session) {}
+};
 
 // Client (V8 Socket Connection)
 function Client(options) {
@@ -25,6 +97,10 @@ Client.prototype = {
 		console.log("DISCONNECTED FROM V8");
 	},
 
+	close: function () {
+		this.socket.destroy();
+	},
+
 	send: function (message) {
 		this.socket.write("Content-Length: " + Buffer.byteLength(message) + "\r\n\r\n");
 		this.socket.write(message);
@@ -34,114 +110,88 @@ Client.prototype = {
 };
 
 
-// Server (WebSocket)
-function Server(options) {
-	this.wss = new ws.Server(options);
-	this.wss.on("connection", this.onConnect.bind(this));
-}
-
-Server.prototype = {
-	onConnect: function (socket) {
-		socket.on("message", this.onMessage.bind(this, socket));
-		socket.on("close", this.onClose.bind(this, socket));
-	},
-
-	onMessage: function (socket, message) {
-		function sendResponse(response) {
-			socket.send(response);
-		}
-		var response = this.handleMessage(message);
-		if (response !== undefined) {
-			if (response && typeof response.then === "function") {
-				response.then(sendResponse);
-			} else {
-				sendResponse(response);
-			}
-		}
-	},
-
-	onClose: function (socket) {
-	},
-
-	send: function (message) {
-		for (var i in this.wss.clients) {
-			this.wss.clients[i].send(message);
-		}
-	},
-
-	handleMessage: function (message) {}
-};
-
 // Bridge between Server and Client
-function Bridge(server, client) {
-	this.server = server;
-	this.client = client;
+function Bridge(session) {
+	this.server = session;
+	this.client = session.client;
 
-	this.translateResponseOrEvent = this.translateResponseOrEvent.bind(this);
-	this.translateCommand = this.translateCommand.bind(this);
+	this.server.handleMessage = this.serverToClient.bind(this);
+	this.client.handleMessage = this.clientToServer.bind(this);
 
-	this.server.handleMessage = this.forward.bind(this, this.client, this.translateCommand);
-	this.client.handleMessage = this.forward.bind(this, this.server, this.translateResponseOrEvent);
+	this.loadScripts();
 }
 
 Bridge.prototype = {
-	makeRequest: function (seq, command, args) {
-		var req = { seq: seq, type: "request", command: command };
-		var length = 0;
-		for (var i in args) {
-			if (args[i] === undefined || args[i] === null) delete args[i];
-			else length++;
-		}
-		if (length > 0) req.arguments = args;
-		return req;
-	},
-
-	makeResponse: function (seq, result) {
-		var res = { id: seq };
-		if (result !== undefined) res.result = result;
-		return res;
-	},
-
-	forward: function (receiver, translator, data) {
-		var inc, out;
+	parse: function (data) {
+		var r;
 		try {
-			inc = JSON.parse(data);
+			r = JSON.parse(data);
 		} catch (e) {
-			return;
+			// nothing
 		}
-		out = JSON.stringify(translator(inc));
-		if (out) {
-			console.log("<<", inc);
-			console.log(">>", out);
-			receiver.send(out);
+		return r;
+	},
+
+	handlerForType: function (type) {
+		switch (type) {
+			case "event":
+				return this.translateEvent;
+			case "response":
+				return this.translateResponse;
+		}
+	},
+
+	// Brackets -> V8
+	serverToClient: function (data) {
+		var message = this.parse(data);
+		if (!message) return;
+		var r = this.translateRequest(message);
+		if (r) {
+			debugLog(RED, message, r);
+			this.client.send(JSON.stringify(r));
+		} else {
+			debugLog(MAGENTA, message);
+		}
+	},
+
+	// V8 -> Brackets
+	clientToServer: function (data) {
+		var message = this.parse(data);
+		if (!message) return;
+		var handler = this.handlerForType(message.type);
+		var r = handler(message);
+		if (r) {
+			debugLog(GREEN, message, r);
+			this.server.send(JSON.stringify(r));
+		} else {
+			debugLog(CYAN, message);
 		}
 	},
 
 	translateResponse: function (message) {
-		var make = this.makeResponse.bind(this, message.request_seq);
+		var make = function (result) {
+			return { id: message.request_seq, result: result };
+		};
 		switch (message.command) {
 			case "evaluate":
 				return make({ result: message.body });
+			default:
+				return make(message.body);
 		}
+		// todo: forward error messages
 	},
 
 	translateEvent: function (message) {
-
+		// todo
 	},
 
-	translateResponseOrEvent: function (message) {
-		switch (message.type) {
-		case "event":
-			return this.translateEvent(message);
-		case "response":
-			return this.translateResponse(message);
-		default:
-			throw "Invalid message type: " + message.type;
+	translateRequest: function (message) {
+		var make = function (command, args) {
+			return { seq: message.id, type: "request", command: command, arguments: args };
+		};
+		if (message.method.substr(0, 3) === "V8.") {
+			return make(message.method.substr(3), message.params);
 		}
-	},
-
-	translateCommand: function(message) {
-		var make = this.makeRequest.bind(this, message.id);
 		switch (message.method) {
 		case "Debugger.resume":
 			return make("continue");
@@ -155,11 +205,22 @@ Bridge.prototype = {
 			return make("suspend");
 		case "Runtime.evaluate":
 			return make("evaluate", { expression: message.params.expression });
+		case "Debugger.setScriptSource":
+			var source = message.params.scriptSource;
+			source = "(function (exports, require, module, __filename, __dirname) { " + source + " });";
+			return make("changelive", { script_id: message.params.scriptId, new_source: source });
+		// todo: more events!
 		}
+	},
+
+	loadScripts: function () {
+		
 	}
 };
 
 
-var client = new Client({ port: 5858 });
 var server = new Server({ port: 8080 });
-var bridge = new Bridge(server, client);
+server.configureSession = function (session) {
+	session.client = new Client({ port: 5858 });
+	session.bridge = new Bridge(session);
+};
