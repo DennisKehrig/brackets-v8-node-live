@@ -90,7 +90,24 @@ Client.prototype = {
 
 	onData: function (buffer) {
 		var message = buffer.toString();
-		this.handleMessage(message);
+		if (this.partialMessage) {
+			message = this.partialMessage + message;
+		}
+		var regexpResults = /^\s*Content-Length: ([0-9]+)/.exec(message);
+		if (regexpResults === null)
+		{
+			//No Content-Length provided, we just pass this on
+			this.handleMessage(message);
+		} else {
+			var messageSize = regexpResults[1];
+
+			if (Buffer.byteLength(message.substr(message.indexOf("{"))) != messageSize){
+				this.partialMessage = message;
+			} else {
+				this.partialMessage = undefined;
+				this.handleMessage(message);
+			}
+		}
 	},
 
 	onClose: function () {
@@ -124,10 +141,11 @@ function Bridge(session) {
 Bridge.prototype = {
 	parse: function (data) {
 		var r;
+		var startOfJSON = data.indexOf("{");
 		try {
-			r = JSON.parse(data);
+			r = JSON.parse(data.substr(startOfJSON));
 		} catch (e) {
-			// nothing
+			debugLog(YELLOW, "error: " + e + " parsing string:" + data);
 		}
 		return r;
 	},
