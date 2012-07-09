@@ -101,11 +101,12 @@ Client.prototype = {
 		} else {
 			var messageSize = regexpResults[1];
 
-			if (Buffer.byteLength(message.substr(message.indexOf("{"))) != messageSize){
+			if (Buffer.byteLength(message.substr(message.indexOf("{"))) < messageSize){
 				this.partialMessage = message;
 			} else {
-				this.partialMessage = undefined;
-				this.handleMessage(message);
+				var aBuffer = new Buffer(message.substr(message.indexOf("{")));
+				this.handleMessage(aBuffer.slice(0,messageSize).toString());
+				this.partialMessage = aBuffer.slice(messageSize).toString();
 			}
 		}
 	},
