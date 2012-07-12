@@ -1,13 +1,14 @@
 var ws = require("ws");
 var net = require("net");
+var childProcess = require("child_process");
 
 var DEBUG = true;
 
-var RED = 1, GREEN = 2, YELLOW = 3, BLUE = 4, MAGENTA = 5, CYAN = 6;
+var BLACK = 30, RED = 31, GREEN = 32, YELLOW = 33, BLUE = 34, MAGENTA = 35, CYAN = 36, WHITE = 37;
 function debugLog(color) {
 	if (!DEBUG) return;
 	function col(code) {
-		return '\033[3' + (code ? code : 0) + 'm';
+		return '\033[' + (code ? code : 0) + 'm';
 	}
 	var args = Array.prototype.slice.call(arguments, 1);
 	args.unshift(col(color));
@@ -76,14 +77,69 @@ Server.prototype = {
 
 // Client (V8 Socket Connection)
 function Client(options) {
-	this.socket = net.connect(options);
-	this.socket.on("connect", this.onConnect.bind(this));
-	this.socket.on("data", this.onData.bind(this));
-	this.socket.on("close", this.onClose.bind(this));
+	//todo: make configurable
+	this.file = "/Users/jpkraemer/Documents/Projects/RealTimeIDE/Source/Sample/1/sample.js"; 
+
+	if (!options)
+	{
+		//we have to create our own node debugger - good thing about it is we can restart it 
+		this.startChildProcess();
+	} else { 
+		this.setupSocket(options); 
+	}
 }
 
 // Client methods
 Client.prototype = {
+	setFile: function (filePath) {
+		this.file = filePath; 
+
+		this.restart();
+	},
+
+	restart: function () { 
+		if (!this.nodeProcess)
+		{
+			//we do not manage the node process and cannot restart 
+			return;
+		}
+
+		this.killChildProcess(); 
+		this.startChildProcess();
+	},
+
+	setupSocket: function (options) {
+		this.socket = net.connect(options);
+		this.socket.on("connect", this.onConnect.bind(this));
+		this.socket.on("data", this.onData.bind(this));
+		this.socket.on("close", this.onClose.bind(this));
+
+		if (this.bufferedMessages){
+			for (var i = 0; i < this.bufferedMessages.length; i++) {
+				this.socket.write(this.bufferedMessages[i]); 
+			}
+
+			this.bufferedMessages = [];
+		}
+	},
+
+	killChildProcess: function () { 
+		console.log('Killing Child Process');
+		if (this.socket !== undefined) {
+			this.socket.destroy(); 
+			this.socket = undefined; 
+		}
+	
+		this.nodeProcess.kill('SIGKILL');
+	}, 
+
+	startChildProcess: function () {
+		this.nodeProcess = childProcess.spawn("node", [ "--debug-brk", this.file ]);
+		var options = { port: 5858 };
+		this.bufferedMessages = [];
+		setTimeout(this.setupSocket.bind(this,options), 700);
+	},
+
 	onConnect: function () {
 		console.log("CONNECTED TO V8");
 	},
@@ -120,8 +176,15 @@ Client.prototype = {
 	},
 
 	send: function (message) {
-		this.socket.write("Content-Length: " + Buffer.byteLength(message) + "\r\n\r\n");
-		this.socket.write(message);
+		if (!this.socket)
+		{
+			//buffer messages 
+			this.bufferedMessages.push("Content-Length: " + Buffer.byteLength(message) + "\r\n\r\n"); 
+			this.bufferedMessages.push(message);
+		} else { 
+			this.socket.write("Content-Length: " + Buffer.byteLength(message) + "\r\n\r\n");
+			this.socket.write(message);
+		}
 	},
 
 	handleMessage: function (message) {}
@@ -180,8 +243,16 @@ Bridge.prototype = {
 		var handler = this.handlerForType(message.type);
 		var r = handler(message);
 		if (r) {
-			debugLog(GREEN, message, r);
-			this.server.send(JSON.stringify(r));
+			var done = function () {
+				debugLog(GREEN, message, r);
+				self.server.send(JSON.stringify(r));
+			};
+			var self = this;
+			if (typeof r.then === "function") {
+				r.then(done);
+			} else {
+				done();
+			}
 		} else {
 			debugLog(CYAN, message);
 		}
@@ -201,16 +272,18 @@ Bridge.prototype = {
 	},
 
 	translateEvent: function (message) {
-		// todo
+		switch (message.event) {
+			case "break":
+				return { method: "Debugger.paused", params: { reason: "other", data: message.body } };
+		}
+
 	},
 
 	translateRequest: function (message) {
 		var make = function (command, args) {
 			return { seq: message.id, type: "request", command: command, arguments: args };
 		};
-		if (message.method.substr(0, 3) === "V8.") {
-			return make(message.method.substr(3), message.params);
-		}
+		
 		switch (message.method) {
 		case "Debugger.resume":
 			return make("continue");
@@ -223,11 +296,24 @@ Bridge.prototype = {
 		case "Debugger.pause":
 			return make("suspend");
 		case "Runtime.evaluate":
-			return make("evaluate", { expression: message.params.expression });
+			return make("evaluate", { expression: message.params.expression, disable_break:false });
 		case "Debugger.setScriptSource":
 			var source = message.params.scriptSource;
 			source = "(function (exports, require, module, __filename, __dirname) { " + source + " });";
 			return make("changelive", { script_id: message.params.scriptId, new_source: source });
+		case "Debugger.setBreakpoint":
+			return make("setbreakpoint", {	type:	"scriptId",
+											target:	message.params.location.scriptId,
+											line:	message.params.location.lineNumber,
+											column:	message.params.location.columnNumber });
+		//Special cases that are not bridged but handled here
+		case "V8.restart": 
+			this.client.restart();
+			return;
+		default: 
+			if (message.method.substr(0, 3) === "V8.") {
+				return make(message.method.substr(3), message.params);
+			}
 		// todo: more events!
 		}
 	},
@@ -237,9 +323,12 @@ Bridge.prototype = {
 	}
 };
 
-
 var server = new Server({ port: 8080 });
 server.configureSession = function (session) {
-	session.client = new Client({ port: 5858 });
+	if (process.argv[2] == "manageDebugger") {
+		session.client = new Client (); 
+	} else {
+		session.client = new Client({ port: 5858 });
+	}
 	session.bridge = new Bridge(session);
 };
