@@ -76,6 +76,12 @@ Server.prototype = {
 };
 
 // Client (V8 Socket Connection)
+
+var ParserStatus = { 
+	waitingForContentSize: 0, 
+	reading: 1
+};
+
 function Client(options) {
 	//todo: make configurable
 	this.file = "/Users/jpkraemer/Documents/Projects/RealTimeIDE/Source/Sample/1/sample.js"; 
@@ -87,14 +93,14 @@ function Client(options) {
 	} else { 
 		this.setupSocket(options); 
 	}
+
+	this.dataParserStatus = ParserStatus.waitingForContentSize;
 }
 
 // Client methods
 Client.prototype = {
 	setFile: function (filePath) {
 		this.file = filePath; 
-
-		this.restart();
 	},
 
 	restart: function () { 
@@ -109,7 +115,12 @@ Client.prototype = {
 	},
 
 	setupSocket: function (options) {
-		this.socket = net.connect(options);
+		try {
+			this.socket = net.connect(options);
+		}
+		catch (e) { 
+			debugLog(RED, e.toString);
+		}
 		this.socket.on("connect", this.onConnect.bind(this));
 		this.socket.on("data", this.onData.bind(this));
 		this.socket.on("close", this.onClose.bind(this));
@@ -134,7 +145,7 @@ Client.prototype = {
 	}, 
 
 	startChildProcess: function () {
-		this.nodeProcess = childProcess.spawn("node", [ "--debug-brk", this.file ]);
+		this.nodeProcess = childProcess.spawn("node", [ "--debug-brk", this.file ], { stdio: 'inherit' });
 		var options = { port: 5858 };
 		this.bufferedMessages = [];
 		setTimeout(this.setupSocket.bind(this,options), 700);
@@ -149,26 +160,34 @@ Client.prototype = {
 		if (this.partialMessage) {
 			message = this.partialMessage + message;
 		}
-		var regexpResults = /^\s*Content-Length: ([0-9]+)/.exec(message);
-		if (regexpResults === null)
-		{
-			//No Content-Length provided, we just pass this on
-			this.handleMessage(message);
-		} else {
-			var messageSize = regexpResults[1];
 
-			if (Buffer.byteLength(message.substr(message.indexOf("{"))) < messageSize){
+		if (this.dataParserStatus == ParserStatus.waitingForContentSize){
+			var regexpResults = /Content-Length: ([0-9]+)/.exec(message);	
+			if (regexpResults === null){
+				this.partialMessage = message;
+				return;
+			} else { 
+				this.currentMessageSize = regexpResults[1];
+				this.dataParserStatus = ParserStatus.reading; 
+				message = message.slice(regexpResults.index);
+			}
+		}
+
+		if (this.dataParserStatus == ParserStatus.reading){
+			if (Buffer.byteLength(message.substr(message.indexOf("{"))) < this.currentMessageSize){
 				this.partialMessage = message;
 			} else {
 				var aBuffer = new Buffer(message.substr(message.indexOf("{")));
-				this.handleMessage(aBuffer.slice(0,messageSize).toString());
-				this.partialMessage = aBuffer.slice(messageSize).toString();
+				this.handleMessage(aBuffer.slice(0,this.currentMessageSize).toString());
+				this.partialMessage = aBuffer.slice(this.currentMessageSize).toString();
+				this.dataParserStatus = ParserStatus.waitingForContentSize;
 			}
 		}
 	},
 
 	onClose: function () {
 		console.log("DISCONNECTED FROM V8");
+		this.socket = undefined;
 	},
 
 	close: function () {
@@ -310,6 +329,9 @@ Bridge.prototype = {
 		case "V8.restart": 
 			this.client.restart();
 			return;
+		case "V8.setFile": 
+			this.client.setFile(message.params.filePath);
+			break;
 		default: 
 			if (message.method.substr(0, 3) === "V8.") {
 				return make(message.method.substr(3), message.params);
