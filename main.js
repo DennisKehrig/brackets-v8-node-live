@@ -141,7 +141,7 @@ define(function main(require, exports, module) {
 			_searchForRunningScript(doc).done(function (script) {
 				_updateDocument(doc, script, true);
 				if (currentDocument.url === doc.url) {
-					_onScriptFound(doc);
+					_onScriptFound(script);
 				}
 			});
 		});
