@@ -77,21 +77,21 @@ Server.prototype = {
 
 // Client (V8 Socket Connection)
 
-var ParserStatus = { 
-	waitingForContentSize: 0, 
+var ParserStatus = {
+	waitingForContentSize: 0,
 	reading: 1
 };
 
 function Client(options) {
 	//todo: make configurable
-	this.file = "/Users/jpkraemer/Documents/Projects/RealTimeIDE/Source/Sample/1/sample.js"; 
+	this.file = "/Users/jpkraemer/Documents/Projects/RealTimeIDE/Source/Sample/1/sample.js";
 
 	if (!options)
 	{
-		//we have to create our own node debugger - good thing about it is we can restart it 
+		//we have to create our own node debugger - good thing about it is we can restart it
 		this.startChildProcess();
-	} else { 
-		this.setupSocket(options); 
+	} else {
+		this.setupSocket(options);
 	}
 
 	this.dataParserStatus = ParserStatus.waitingForContentSize;
@@ -100,17 +100,17 @@ function Client(options) {
 // Client methods
 Client.prototype = {
 	setFile: function (filePath) {
-		this.file = filePath; 
+		this.file = filePath;
 	},
 
-	restart: function () { 
+	restart: function () {
 		if (!this.nodeProcess)
 		{
-			//we do not manage the node process and cannot restart 
+			//we do not manage the node process and cannot restart
 			return;
 		}
 
-		this.killChildProcess(); 
+		this.killChildProcess();
 		this.startChildProcess();
 	},
 
@@ -118,7 +118,7 @@ Client.prototype = {
 		try {
 			this.socket = net.connect(options);
 		}
-		catch (e) { 
+		catch (e) {
 			debugLog(RED, e.toString);
 		}
 		this.socket.on("connect", this.onConnect.bind(this));
@@ -127,22 +127,22 @@ Client.prototype = {
 
 		if (this.bufferedMessages){
 			for (var i = 0; i < this.bufferedMessages.length; i++) {
-				this.socket.write(this.bufferedMessages[i]); 
+				this.socket.write(this.bufferedMessages[i]);
 			}
 
 			this.bufferedMessages = [];
 		}
 	},
 
-	killChildProcess: function () { 
+	killChildProcess: function () {
 		console.log('Killing Child Process');
 		if (this.socket !== undefined) {
-			this.socket.destroy(); 
-			this.socket = undefined; 
+			this.socket.destroy();
+			this.socket = undefined;
 		}
 	
 		this.nodeProcess.kill('SIGKILL');
-	}, 
+	},
 
 	startChildProcess: function () {
 		this.nodeProcess = childProcess.spawn("node", [ "--debug-brk", this.file ], { stdio: 'inherit' });
@@ -162,13 +162,13 @@ Client.prototype = {
 		}
 
 		if (this.dataParserStatus == ParserStatus.waitingForContentSize){
-			var regexpResults = /Content-Length: ([0-9]+)/.exec(message);	
+			var regexpResults = /Content-Length: ([0-9]+)/.exec(message);
 			if (regexpResults === null){
 				this.partialMessage = message;
 				return;
-			} else { 
+			} else {
 				this.currentMessageSize = regexpResults[1];
-				this.dataParserStatus = ParserStatus.reading; 
+				this.dataParserStatus = ParserStatus.reading;
 				message = message.slice(regexpResults.index);
 			}
 		}
@@ -197,10 +197,10 @@ Client.prototype = {
 	send: function (message) {
 		if (!this.socket)
 		{
-			//buffer messages 
-			this.bufferedMessages.push("Content-Length: " + Buffer.byteLength(message) + "\r\n\r\n"); 
+			//buffer messages
+			this.bufferedMessages.push("Content-Length: " + Buffer.byteLength(message) + "\r\n\r\n");
 			this.bufferedMessages.push(message);
-		} else { 
+		} else {
 			this.socket.write("Content-Length: " + Buffer.byteLength(message) + "\r\n\r\n");
 			this.socket.write(message);
 		}
@@ -228,7 +228,7 @@ Bridge.prototype = {
 		try {
 			r = JSON.parse(data.substr(startOfJSON));
 		} catch (e) {
-			debugLog(YELLOW, "error: " + e + " parsing string:" + data);
+			debugLog(YELLOW, "error: " + e + " parsing string: '" + data + "'");
 		}
 		return r;
 	},
@@ -326,13 +326,13 @@ Bridge.prototype = {
 											line:	message.params.location.lineNumber,
 											column:	message.params.location.columnNumber });
 		//Special cases that are not bridged but handled here
-		case "V8.restart": 
+		case "V8.restart":
 			this.client.restart();
 			return;
-		case "V8.setFile": 
+		case "V8.setFile":
 			this.client.setFile(message.params.filePath);
 			break;
-		default: 
+		default:
 			if (message.method.substr(0, 3) === "V8.") {
 				return make(message.method.substr(3), message.params);
 			}
@@ -348,7 +348,7 @@ Bridge.prototype = {
 var server = new Server({ port: 8080 });
 server.configureSession = function (session) {
 	if (process.argv[2] == "manageDebugger") {
-		session.client = new Client (); 
+		session.client = new Client ();
 	} else {
 		session.client = new Client({ port: 5858 });
 	}
