@@ -408,8 +408,8 @@ define(function main(require, exports, module) {
 				parser.parse(code, function onParse(err, tree) {
 					console.assert(!err, err);
 					// Convert it to CSS and append that to the document head
-					$("<style>").text(tree.toCSS()).appendTo(window.document.head);
-					result.resolve();
+					var $node = $("<style>").text(tree.toCSS()).appendTo(window.document.head);
+					result.resolve($node);
 				});
 			})
 			.fail(function (request, error) {
