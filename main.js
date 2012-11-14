@@ -40,7 +40,7 @@
  * @require DocumentManager
  */
 define(function main(require, exports, module) {
-	'use strict';
+	"use strict";
 
 
 	// --- Required modules ---
@@ -54,27 +54,27 @@ define(function main(require, exports, module) {
 	// --- Settings ---
 	
 	// This directory
-	var _moduleDirectory    = require.toUrl("./").replace(/\.\/$/, '');
+	var _moduleDirectory    = require.toUrl("./").replace(/\.\/$/, "");
 	// Path to socket.io.js
 	var _pathSocketIoJs     = _extensionDirUrl() + "node_modules/socket.io-client/dist/socket.io.js";
 	// URL to the socket bridge
-	var _socketBridgeUrl    = 'http://localhost:3858';
+	var _socketBridgeUrl    = "http://localhost:3858";
 	// socket.io options
 	var _connectionOptions = {
 		// Make a second io.connect() call actually do something (default: false)
-		'force new connection': true,
+		"force new connection": true,
 		// If the server drops the connection, do not reconnect automatically (default: true)
-		'reconnect': false
+		"reconnect": false
 	};
 	// What V8 wraps code in automatically
 	var _codePrefix = "(function (exports, require, module, __filename, __dirname) {\n";
 	var _codeSuffix = "\n});";
 	// Will be shown as tooltips
 	var _stateDescriptions = {
-		disconnected: 'Click to connect to the Socket Bridge',
-		connected:    'Node.js/V8 does not seem to be running',
-		bridged:      'The current file is not executed by Node.js/V8',
-		live:         'Live connection to Node.js/V8'
+		disconnected: "Click to connect to the Socket Bridge",
+		connected:    "Node.js/V8 does not seem to be running",
+		bridged:      "The current file is not executed by Node.js/V8",
+		live:         "Live connection to Node.js/V8"
 	};
 	
 	
@@ -198,7 +198,7 @@ define(function main(require, exports, module) {
 
 	/** Called when the user modifies the current document */
 	function _onDocumentChanged(event, doc) {
-		// false: Don't report errors
+		// false: Don"t report errors
 		_updateDocument(doc, _script, false);
 	}
 
@@ -212,13 +212,13 @@ define(function main(require, exports, module) {
 	// --- Functionality ---
 
 	function _updateState() {
-		var state = 'disconnected';
+		var state = "disconnected";
 		if (_socketBridge) {
-			state = 'connected';
+			state = "connected";
 			if (_debugger) {
-				state = 'bridged';
+				state = "bridged";
 				if (_script) {
-					state = 'live';
+					state = "live";
 				}
 			}
 		}
@@ -229,8 +229,8 @@ define(function main(require, exports, module) {
 			_$button.toggleClass(otherState, state === otherState);
 		});
 		
-		// title isn't working on the Mac, so we fake it via CSS
-		_$button.attr('data-description', _stateDescriptions[state]);
+		// title isn"t working on the Mac, so we fake it via CSS
+		_$button.attr("data-description", _stateDescriptions[state]);
 	}
 
 	/** Connects to the socket bridge */
@@ -244,17 +244,17 @@ define(function main(require, exports, module) {
 		_socketBridge = io.connect(_socketBridgeUrl, _connectionOptions);
 		
 		// Brackets <-> Bridge
-		_socketBridge.on('connect',    _onConnect);
-		_socketBridge.on('disconnect', _onDisconnect);
-		_socketBridge.on('error',      _onError);
+		_socketBridge.on("connect",    _onConnect);
+		_socketBridge.on("disconnect", _onDisconnect);
+		_socketBridge.on("error",      _onError);
 
 		// Bridge <-> Debugger
-		_socketBridge.on('debuggerConnect',    _onBridgeConnect);
-		_socketBridge.on('debuggerDisconnect', _onBridgeDisconnect);
-		_socketBridge.on('debuggerError',      _onBridgeError);
+		_socketBridge.on("debuggerConnect",    _onBridgeConnect);
+		_socketBridge.on("debuggerDisconnect", _onBridgeDisconnect);
+		_socketBridge.on("debuggerError",      _onBridgeError);
 
 		// Calls to callbacks we provided the debugger with
-		_socketBridge.on('callback', _onCallback);
+		_socketBridge.on("callback", _onCallback);
 	}
 
 	/** Disconnect from the socket bridge */
@@ -325,8 +325,8 @@ define(function main(require, exports, module) {
 		}
 		
 		console.log("[V8] Observing document " + _doc.file.name);
-		$(_doc).on('change', _onDocumentChanged);
-		$(DocumentManager).on('documentSaved', _onDocumentSaved);
+		$(_doc).on("change", _onDocumentChanged);
+		$(DocumentManager).on("documentSaved", _onDocumentSaved);
 	}
 
 	function _stopObservingDocument() {
@@ -336,8 +336,8 @@ define(function main(require, exports, module) {
 		}
 		
 		console.log("[V8] No longer observing document " + _doc.file.name);
-		$(DocumentManager).off('documentSaved', _onDocumentSaved);
-		$(_doc).off('change', _onDocumentChanged);
+		$(DocumentManager).off("documentSaved", _onDocumentSaved);
+		$(_doc).off("change", _onDocumentChanged);
 		_doc = null;
 	}
 
@@ -368,7 +368,7 @@ define(function main(require, exports, module) {
 	
 	/** Load socket.io client library unless io is already defined, called by init */
 	function _loadSocketIO() {
-		if (typeof io === 'undefined') {
+		if (typeof io === "undefined") {
 			console.log("[V8] Loading socket.io client");
 			$("<script>").attr("src", _pathSocketIoJs).appendTo(window.document.head);
 		} else {
@@ -378,8 +378,8 @@ define(function main(require, exports, module) {
 	
 	/** Find the URL to this extension's directory */
 	function _extensionDirUrl() {
-		var url = brackets.platform === "win" ? "file:///" : "file://";
-		url += require.toUrl('./').replace(/\.\/$/, '');
+		var url = brackets.platform === "win" ? "file:///" : "file://localhost";
+		url += require.toUrl("./").replace(/\.\/$/, "");
 		
 		return url;
 	}
@@ -387,18 +387,23 @@ define(function main(require, exports, module) {
 	/** Loads a less file as CSS into the document */
 	function _loadLessFile(file, dir) {
 		var result = $.Deferred();
-		
+
 		// Load the Less code
-		$.get(dir + file, function (code) {
-			// Parse it
-			var parser = new less.Parser({ filename: file, paths: [dir] });
-			parser.parse(code, function onParse(err, tree) {
-				console.assert(!err, err);
-				// Convert it to CSS and append that to the document head
-				$("<style>").text(tree.toCSS()).appendTo(window.document.head);
-				result.resolve();
-			});
-		});
+		$.get(dir + file)
+			.done(function (code) {
+				// Parse it
+				var parser = new less.Parser({ filename: file, paths: [dir] });
+				parser.parse(code, function onParse(err, tree) {
+					console.assert(!err, err);
+					// Convert it to CSS and append that to the document head
+					$("<style>").text(tree.toCSS()).appendTo(window.document.head);
+					result.resolve();
+				});
+			})
+			.fail(function (request, error) {
+				result.reject(error);
+			})
+		;
 		
 		return result.promise();
 	}
@@ -407,8 +412,11 @@ define(function main(require, exports, module) {
 	// --- Loaders and Unloaders ---
 
 	function _loadStyle() {
-		return _loadLessFile("main.less", _extensionDirUrl()).done(function ($node) {
+		var file = "main.less";
+		return _loadLessFile(file, _extensionDirUrl()).done(function ($node) {
 			_$styleTag = $node;
+		}).fail(function (error) {
+			console.log("[V8] Failed to load " + file + " :(");
 		});
 	}
 
@@ -418,16 +426,9 @@ define(function main(require, exports, module) {
 
 	/** Setup the V8 toolbar button, called by init */
 	function _loadButton() {
-		var result = new $.Deferred();
-		
-		_loadStyle().done(function () {
-			_$button = $("<a>").text("V8").attr({ href: "#", id: "denniskehrig-v8live-button" });
-			_$button.click(_onButtonClicked);
-			_$button.insertBefore('#main-toolbar .buttons #toolbar-go-live');
-			result.resolve();
-		}).fail(result.reject);
-		
-		return result.promise();
+		_$button = $("<a>").text("V8").attr({ href: "#", id: "denniskehrig-v8live-button" });
+		_$button.click(_onButtonClicked);
+		_$button.insertBefore("#main-toolbar .buttons #toolbar-go-live");
 	}
 
 	
@@ -444,9 +445,8 @@ define(function main(require, exports, module) {
 		console.log("[V8] init");
 		_loadSocketIO();
 		_loadStyle().done(function () {
-			_loadButton().done(function () {
-				_updateState();
-			});
+			_loadButton();
+			_updateState();
 		});
 		_loadDocumentManager();
 	}
