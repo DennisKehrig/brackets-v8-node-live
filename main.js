@@ -23,7 +23,7 @@
  */
 
 /*jslint vars: true, plusplus: true, devel: true, nomen: true, indent: 4, forin: true, maxerr: 50, regexp: true */
-/*global define, brackets, $, less, io */
+/*global define, brackets, $, less, io, window */
 
 
 /**
@@ -56,7 +56,7 @@ define(function main(require, exports, module) {
 	// This directory
 	var _moduleDirectory    = require.toUrl("./").replace(/\.\/$/, '');
 	// Path to socket.io.js
-	var _pathSocketIoJs     = _moduleDirectory + "/node_modules/socket.io-client/dist/socket.io.js";
+	var _pathSocketIoJs     = _extensionDirUrl() + "node_modules/socket.io-client/dist/socket.io.js";
 	// URL to the socket bridge
 	var _socketBridgeUrl    = 'http://localhost:3858';
 	// socket.io options
@@ -98,7 +98,6 @@ define(function main(require, exports, module) {
 
 	/** Handles clicks of the V8 toolbar button */
 	function _onButtonClicked() {
-		console.log("[V8] Button clicked");
 		if (_socketBridge) {
 			_disconnect();
 		} else {
@@ -107,15 +106,13 @@ define(function main(require, exports, module) {
 	}
 	
 	/** Called after we connected from the socket bridge */
-	function _onConnect()
-	{
+	function _onConnect() {
 		console.log("[V8] Connected to socket bridge");
 		_updateState();
 	}
 
 	/** Called after we disconnected from the socket bridge */
-	function _onDisconnect()
-	{
+	function _onDisconnect() {
 		_onBridgeDisconnect();
 		
 		console.log("[V8] Disconnected from socket bridge");
@@ -190,11 +187,11 @@ define(function main(require, exports, module) {
 
 	/** Called when the user switches to a different document */
 	function _onCurrentDocumentChanged() {
-		if (! _debugger) { return; }
+		if (!_debugger) { return; }
 		
 		_onScriptLost();
 		var doc = DocumentManager.getCurrentDocument();
-		if (! doc) { return; }
+		if (!doc) { return; }
 		
 		_searchForRunningScript(doc).done(_onScriptFound);
 	}
@@ -262,7 +259,7 @@ define(function main(require, exports, module) {
 
 	/** Disconnect from the socket bridge */
 	function _disconnect() {
-		if (! _socketBridge) {
+		if (!_socketBridge) {
 			console.log("[V8] Already disconnected from the socket bridge");
 			return;
 		}
@@ -277,11 +274,11 @@ define(function main(require, exports, module) {
 	function _searchForRunningScript(doc) {
 		var result = new $.Deferred();
 
-		if (! doc) {
+		if (!doc) {
 			console.log("[V8] No document to check");
 			result.reject();
 		}
-		else if (! _debugger) {
+		else if (!_debugger) {
 			console.log("[V8] No debugger to ask for running scripts");
 			result.reject();
 		}
@@ -289,6 +286,11 @@ define(function main(require, exports, module) {
 			console.log("[V8] Checking whether " + doc.file.name + " is a running script");
 			
 			var path = doc.file.fullPath;
+			if (brackets.platform === "win") {
+				// Replace / with \ on Windows
+				path = path.replace(/\//g, "\\");
+			}
+			
 			_debugger.getScripts({ filter: path }, function onGetScripts(err, scripts) {
 				if (err) {
 					result.reject(err);
@@ -317,7 +319,7 @@ define(function main(require, exports, module) {
 
 		_doc = DocumentManager.getCurrentDocument();
 		
-		if (! _doc) {
+		if (!_doc) {
 			console.log("[V8] No document to observe");
 			return;
 		}
@@ -328,7 +330,7 @@ define(function main(require, exports, module) {
 	}
 
 	function _stopObservingDocument() {
-		if (! _doc) {
+		if (!_doc) {
 			console.log("[V8] No document to stop observing");
 			return;
 		}
@@ -343,7 +345,7 @@ define(function main(require, exports, module) {
 	function _updateDocument(doc, script, reportError) {
 		console.log("[V8] Updating document " + doc.file.name);
 		
-		if (! _debugger || ! script || !doc) {
+		if (!_debugger || !script || !doc) {
 			console.log("[V8] No debugger, script and/or document to use for updating");
 			return;
 		}
@@ -352,7 +354,7 @@ define(function main(require, exports, module) {
 		var code = _codePrefix + doc.getText() + _codeSuffix;
 
 		_debugger.changeLive(script.id, code, false, function (err) {
-			if (! err) {
+			if (!err) {
 				console.log("[V8] Successfully updated script " + script.name);
 			}
 			else if (reportError) {
@@ -374,13 +376,12 @@ define(function main(require, exports, module) {
 		}
 	}
 	
-	/** Find this extension's directory relative to the brackets root */
-	function _extensionDirForBrowser() {
-		var bracketsIndex = window.location.pathname;
-		var bracketsDir   = bracketsIndex.substr(0, bracketsIndex.lastIndexOf('/') + 1);
-		var extensionDir  = bracketsDir + require.toUrl('./');
-
-		return extensionDir;
+	/** Find the URL to this extension's directory */
+	function _extensionDirUrl() {
+		var url = brackets.platform === "win" ? "file:///" : "file://";
+		url += require.toUrl('./').replace(/\.\/$/, '');
+		
+		return url;
 	}
 
 	/** Loads a less file as CSS into the document */
@@ -406,7 +407,7 @@ define(function main(require, exports, module) {
 	// --- Loaders and Unloaders ---
 
 	function _loadStyle() {
-		return _loadLessFile("main.less", _extensionDirForBrowser()).done(function ($node) {
+		return _loadLessFile("main.less", _extensionDirUrl()).done(function ($node) {
 			_$styleTag = $node;
 		});
 	}
