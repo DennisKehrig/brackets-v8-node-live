@@ -80,6 +80,8 @@ define(function main(require, exports, module) {
 	
 	// --- State ---
 
+	// Where the socket.io library will be stored
+	var _socketIO;
 	// <style> tag containing CSS code compiled from LESS
 	var _$styleTag;
 	// The toolbar button
@@ -241,7 +243,7 @@ define(function main(require, exports, module) {
 		}
 		
 		console.log("[V8] Connecting to socket bridge");
-		_socketBridge = io.connect(_socketBridgeUrl, _connectionOptions);
+		_socketBridge = _socketIO.connect(_socketBridgeUrl, _connectionOptions);
 		
 		// Brackets <-> Bridge
 		_socketBridge.on("connect",    _onConnect);
@@ -368,12 +370,22 @@ define(function main(require, exports, module) {
 	
 	/** Load socket.io client library unless io is already defined, called by init */
 	function _loadSocketIO() {
-		if (typeof io === "undefined") {
-			console.log("[V8] Loading socket.io client");
-			$("<script>").attr("src", _pathSocketIoJs).appendTo(window.document.head);
-		} else {
+		var result = new $.Deferred();
+		
+		if (typeof io !== "undefined") {
 			console.log("[V8] Socket.io client already loaded");
+			_socketIO = io;
+			result.resolve();
 		}
+		else {
+			console.log("[V8] Loading socket.io client");
+			require([_pathSocketIoJs], function (io) {
+				_socketIO = io;
+				result.resolve();
+			});
+		}
+		
+		return result.promise();
 	}
 	
 	/** Find the URL to this extension's directory */
@@ -443,8 +455,7 @@ define(function main(require, exports, module) {
 
 	function load() {
 		console.log("[V8] init");
-		_loadSocketIO();
-		_loadStyle().done(function () {
+		$.when(_loadSocketIO(), _loadStyle()).done(function () {
 			_loadButton();
 			_updateState();
 		});
