@@ -23,7 +23,7 @@
  */
 
 /*jslint vars: true, plusplus: true, devel: true, nomen: true, indent: 4, forin: true, maxerr: 50, regexp: true */
-/*global define, brackets, $, less, io, window */
+/*global define, brackets, $, io, window */
 
 
 /**
@@ -47,16 +47,15 @@ define(function main(require, exports, module) {
 
 	// Document Manager
 	var DocumentManager     = brackets.getModule("document/DocumentManager");
+	var ExtensionUtils      = brackets.getModule("utils/ExtensionUtils");
 	// Debugger class, implements an API by communicating with the socket bridge
 	var Debugger            = require("./Debugger");
 
 	
 	// --- Settings ---
 	
-	// This directory
-	var _moduleDirectory    = require.toUrl("./").replace(/\.\/$/, "");
 	// Path to socket.io.js
-	var _pathSocketIoJs     = _extensionDirUrl() + "node_modules/socket.io-client/dist/socket.io.js";
+	var _pathSocketIoJs     = ExtensionUtils.getModuleUrl(module, "node_modules/socket.io-client/dist/socket.io.js");
 	// URL to the socket bridge
 	var _socketBridgeUrl    = "http://localhost:3858";
 	// socket.io options
@@ -125,7 +124,7 @@ define(function main(require, exports, module) {
 	/** Called for errors from/with the socket bridge */
 	function _onError(error) {
 		console.log(error);
-		alert("Failed to connect to " + _socketBridgeUrl + "\n\nIs the socket bridge running?\nRun npm start in the " + _moduleDirectory + " folder.");
+		alert("Failed to connect to " + _socketBridgeUrl + "\n\nIs the socket bridge running?\nRun npm start in the " + ExtensionUtils.getModulePath(module) + " folder.");
 		_disconnect();
 	}
 
@@ -388,48 +387,11 @@ define(function main(require, exports, module) {
 		return result.promise();
 	}
 	
-	/** Find the URL to this extension's directory */
-	function _extensionDirUrl() {
-		var url = brackets.platform === "win" ? "file:///" : "file://localhost";
-		url += require.toUrl("./").replace(/\.\/$/, "");
-		
-		return url;
-	}
-
-	/** Loads a less file as CSS into the document */
-	function _loadLessFile(file, dir) {
-		var result = $.Deferred();
-
-		// Load the Less code
-		$.get(dir + file)
-			.done(function (code) {
-				// Parse it
-				var parser = new less.Parser({ filename: file, paths: [dir] });
-				parser.parse(code, function onParse(err, tree) {
-					console.assert(!err, err);
-					// Convert it to CSS and append that to the document head
-					var $node = $("<style>").text(tree.toCSS()).appendTo(window.document.head);
-					result.resolve($node);
-				});
-			})
-			.fail(function (request, error) {
-				result.reject(error);
-			})
-		;
-		
-		return result.promise();
-	}
 	
-
 	// --- Loaders and Unloaders ---
 
 	function _loadStyle() {
-		var file = "main.less";
-		return _loadLessFile(file, _extensionDirUrl()).done(function ($node) {
-			_$styleTag = $node;
-		}).fail(function (error) {
-			console.log("[V8] Failed to load " + file + " :(");
-		});
+		return ExtensionUtils.loadStyleSheet(module, "main.less");
 	}
 
 	function _unloadStyle() {
