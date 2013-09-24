@@ -1,16 +1,20 @@
 {
-  "name": "brackets-live-development-v8"
-, "description": "V8 Live Development for Brackets"
-, "version": "0.0.2"
-, "scripts": {
-    "start": "nodemon socket_bridge.js"
-  }
-, "author": "Dennis Kehrig <dennis.kehrig@rwth-aachen.de>"
-, "engines": {
-    "node": "*"
-  }
-, "dependencies": {
-    "node-inspector": "~0.2.0"
-  , "socket.io-client": "~0.9.6"
-  }
+	"name": "dkehrig.live-development-v8",
+	"title": "Node.js/V8 Live Editing",
+	"description": "Update scripts running in a V8 virtual machine as you type",
+	"homepage": "https://github.com/DennisKehrig/brackets-v8-node-live",
+	"version": "1.0.0",
+    "license": "MIT",
+	"scripts": {
+		"start": "nodemon socket_bridge.js"
+	},
+	"author": "Dennis Kehrig <mailgithub@denniskehrig.de> (https://github.com/DennisKehrig)",
+	"engines": {
+		"node": "*",
+        "brackets": ">=0.31.0"
+	},
+	"dependencies": {
+		"node-inspector": "~0.2.0",
+		"socket.io-client": "~0.9.6"
+	}
 }
